@@ -1,8 +1,8 @@
-_maidrone-primary-systems_
+_maiidrone-primary-systems_
 
 # Maii Drone - Primary system
 
-## Build status 
+## Build status
 
 | branch | status
 | ---- | ---- |
