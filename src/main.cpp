@@ -40,6 +40,13 @@
 #define CONTROL_VERTICAL_MIN  1000
 #define CONTROL_VERTICAL_MAX  2000
 
+#define CONTROL_PITCH_MIN    -20          // Control min. pitch (mapped from CONTROL_PITCH_MIN)
+#define CONTROL_PITCH_MAX     20          // Control max. pitch (mapped from CONTROL_PITCH_MAX)
+#define CONTROL_ROLL_MIN     -20          // Control min. roll (mapped from CONTROL_ROLL_MIN)
+#define CONTROL_ROLL_MAX      20          // Control max. roll (mapped from CONTROL_ROLL_MAX)
+#define CONTROL_YAW_MIN      -180         // Control min. yaw (mapped from CONTROL_YAW_MIN)
+#define CONTROL_YAW_MAX       180         // Control max. yaw (mapped from CONTROL_YAW_MAX)
+
 // ESC configuration
 #define ESC_MIN               1000        // ESC min PWM microseconds value
 #define ESC_MAX               2000        // ESC max PWM microseconds value
@@ -59,9 +66,9 @@
 #define YAW_I_VAL             0.1
 #define YAW_D_VAL             0.2
 
-#define PID_PITCH_INCLUENCE   100
-#define PID_ROLL_INCLUENCE    100
-#define PID_YAW_INCLUENCE     100
+#define PID_PITCH_INFLUENCE   10        // Control to PID degrees pitch influence
+#define PID_ROLL_INFLUENCE    10        // Control to PID degrees roll influence
+#define PID_YAW_INFLUENCE     10        // Control to PID degrees yaw influence
 
 // ================================================================
 // ===                        VARIABLES                         ===
@@ -88,6 +95,7 @@ unsigned long lastUpdateMicros;
 Servo escA, escB, escC, escD;       // ESC A, B, C and D
 bool escReady = false;              // set true if ESC init was successful
 int speedEscA, speedEscB, speedEscC, speedEscD;
+int speedAC, speedBD;
 
 // PID vars
 float balanceAC, balanceBD, balanceAxis;
@@ -170,13 +178,13 @@ void dmpDataReady() {
 // ================================================================
 void initPID() {
   pitchPid.SetMode(AUTOMATIC);
-  pitchPid.SetOutputLimits(-PID_PITCH_INCLUENCE, PID_PITCH_INCLUENCE);
+  pitchPid.SetOutputLimits(-PID_PITCH_INFLUENCE, PID_PITCH_INFLUENCE);
 
   rollPid.SetMode(AUTOMATIC);
-  rollPid.SetOutputLimits(-PID_ROLL_INCLUENCE, PID_ROLL_INCLUENCE);
+  rollPid.SetOutputLimits(-PID_ROLL_INFLUENCE, PID_ROLL_INFLUENCE);
 
   yawPid.SetMode(AUTOMATIC);
-  yawPid.SetOutputLimits(-PID_YAW_INCLUENCE, PID_YAW_INCLUENCE);
+  yawPid.SetOutputLimits(-PID_YAW_INFLUENCE, PID_YAW_INFLUENCE);
 }
 
 void computePID() {
@@ -330,6 +338,16 @@ void initEscs() {
 }
 
 void calculateEscSpeeds() {
+  const int mult = 10;
+
+  speedAC = verticalControl * (abs(-(PID_ROLL_INFLUENCE * mult) + balanceAxis) / (PID_ROLL_INFLUENCE * mult));
+  speedBD = verticalControl * (abs((PID_PITCH_INFLUENCE * mult) + balanceAxis) / (PID_PITCH_INFLUENCE * mult));
+
+  speedEscA = (((PID_ROLL_INFLUENCE * mult) + balanceAC) / (PID_ROLL_INFLUENCE * mult)) * speedAC;
+  speedEscB = (((PID_PITCH_INFLUENCE * mult) + balanceBD) / (PID_PITCH_INFLUENCE * mult)) * speedBD;
+  speedEscC = (abs((-(PID_ROLL_INFLUENCE * mult) + balanceAC) / (PID_ROLL_INFLUENCE * mult))) * speedAC;
+  speedEscD = (abs((-(PID_PITCH_INFLUENCE * mult) + balanceBD) / (PID_PITCH_INFLUENCE * mult))) * speedBD;
+
   // TODO: Remove (debugging only)
   // TODO: Send proper message packet when requested
 #ifdef DEBUG_SPD
@@ -352,6 +370,11 @@ void updateEscSpeeds() {
       currentMicros - lastUpdateMicros > ESC_UPDATE_FREQ)
     lastUpdateMicros = currentMicros;
   else return;
+
+  speedEscA = 1000 + min(speedEscA, 600);
+  speedEscB = 1000 + min(speedEscB, 600);
+  speedEscC = 1000 + min(speedEscC, 600);
+  speedEscD = 1000 + min(speedEscD, 600);
 
   // Apply new speeds
   escA.writeMicroseconds(speedEscA);
@@ -380,11 +403,15 @@ void programLoop() {
   // to immediately process the sensor data
 
   // Read serial data
-  while(!anyInterrupt()) {
+  while(Serial.available() > 0 && !anyInterrupt()) {
     pitchControl = 0;
     rollControl = 0;
     yawControl = 0;
-    verticalControl = 0;
+
+    if (verticalControl > 0)
+      verticalControl = 0;
+    else verticalControl = 350;
+    Serial.read();
   }
 }
 
